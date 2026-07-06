@@ -6,6 +6,7 @@ import heapq
 import pickle
 import time
 import os
+import threading
 from collections import defaultdict, Counter
 
 class BMPParser:
@@ -773,145 +774,340 @@ class CompressionEngine:
         return np.array(indices[:total_pixels], dtype=np.uint8)
 
 
-# BMPViewer class to create a GUI for viewing BMP images, it will use the BMPParser to read BMP files and display them with options for brightness, scaling, and RGB channel visibility.
-# Libray used for GUI is tkinter, and numpy is used for image processing (it also used in class BMPParser above).
 class BMPViewer:
-    # Default constructor to initialize the BMPViewer class, it sets up the main window and initializes the parser and image variables.
-    # It also initializes the channel visibility states for RGB channels and sets up the GUI components.
     def __init__(self, root):
         self.root = root
-        self.root.title("BMP Image Viewer")
-        self.root.geometry("900x700")
-        
-        self.parser = BMPParser()   # Initialize the BMPParser to handle BMP file parsing.
-        self.original_image = None  # This will hold the original pixel data after parsing.
-        self.current_image = None   # This will hold the processed image data for display.
-        self.photo_image = None     # This will hold the PhotoImage object for displaying the image on the canvas.
-        
-        # Channel states
-        self.show_red = tk.BooleanVar(value=True)
-        self.show_green = tk.BooleanVar(value=True)
-        self.show_blue = tk.BooleanVar(value=True)
-        
-        self.setup_gui()
-    
-    def setup_gui(self):
-        # Set up the main GUI layout and components
-        main_frame = ttk.Frame(self.root)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Control panel, which will contain file operations, metadata display, and image controls.
-        # This will help organize the GUI into sections for better usability.
-        control_frame = ttk.Frame(main_frame)
-        control_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        # File operations, which will allow the user to open BMP files and display their metadata.
-        # This will help the user to easily access file operations without cluttering the main window.
-        file_frame = ttk.LabelFrame(control_frame, text="File Operations")
-        file_frame.pack(fill=tk.X, pady=(0, 5))
-        
-        # Button to open BMP file, which will trigger the file dialog to select a BMP file.
-        ttk.Button(file_frame, text="Open BMP File", command=self.open_file).pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # Metadata display area, which will show the metadata of the BMP file after it is opened.
-        # This will help the user to see important information about the BMP file without cluttering the main window.
-        # The metadata includes file size, image dimensions, and bits per pixel.
-        # This will help the user to understand the properties of the BMP file they are viewing.
-        metadata_frame = ttk.LabelFrame(control_frame, text="Metadata")
-        metadata_frame.pack(fill=tk.X, pady=(0, 5))
+        self.root.title("BMP Image Compressor")
+        self.root.geometry("1100x760")
+        self.root.minsize(850, 600)
 
-        ttk.Button(file_frame, text="Compress to .custom_compressed", command=self.compress_image).pack(side=tk.LEFT, padx=5, pady=5)
-        ttk.Button(file_frame, text="Open .custom_compressed File", command=self.open_custom_compressed_file).pack(side=tk.LEFT, padx=5, pady=5)
-        
-        # Text widget to display metadata, which will be updated when a BMP file is opened.
-        self.metadata_text = tk.Text(metadata_frame, height=4, state=tk.DISABLED)
-        self.metadata_text.pack(fill=tk.X, padx=5, pady=5)
-        
-        # Image controls, which will allow the user to adjust the image display settings such as brightness, scaling, and RGB channel visibility.
-        # This will help the user to customize the image display according to their preferences.
-        # The controls include sliders for brightness and scaling, and checkboxes for RGB channels.
-        controls_frame = ttk.LabelFrame(control_frame, text="Image Controls")
-        controls_frame.pack(fill=tk.X, pady=(0, 5))
-        
-        # Brightness control, which will allow the user to adjust the brightness of the image.
-        brightness_frame = ttk.Frame(controls_frame)
-        brightness_frame.pack(fill=tk.X, padx=5, pady=2)
-        ttk.Label(brightness_frame, text="Brightness (0-100%):").pack(side=tk.LEFT)
-        self.brightness_var = tk.DoubleVar(value=100)
-        brightness_scale = ttk.Scale(brightness_frame, from_=0, to=100, 
-                                   variable=self.brightness_var, orient=tk.HORIZONTAL,
-                                   command=self.update_image)
-        brightness_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
-        self.brightness_label = ttk.Label(brightness_frame, text="100%")
-        self.brightness_label.pack(side=tk.RIGHT, padx=(5, 0))
-        
-        # Scale control, which will allow the user to scale the image up or down.
-        scale_frame = ttk.Frame(controls_frame)
-        scale_frame.pack(fill=tk.X, padx=5, pady=2)
-        ttk.Label(scale_frame, text="Scale (0-100%):").pack(side=tk.LEFT)
-        self.scale_var = tk.DoubleVar(value=100)
-        scale_scale = ttk.Scale(scale_frame, from_=0, to=100, 
-                              variable=self.scale_var, orient=tk.HORIZONTAL,
-                              command=self.update_image)
-        scale_scale.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
-        self.scale_label = ttk.Label(scale_frame, text="100%")
-        self.scale_label.pack(side=tk.RIGHT, padx=(5, 0))
-        
-        # RGB channel controls, which will allow the user to toggle the visibility of individual RGB channels.
-        rgb_frame = ttk.Frame(controls_frame)
-        rgb_frame.pack(fill=tk.X, padx=5, pady=2)
-        ttk.Label(rgb_frame, text="RGB Channels:").pack(side=tk.LEFT)
-        
-        self.red_button = ttk.Checkbutton(rgb_frame, text="Red", variable=self.show_red, 
-                                         command=self.update_image)
-        self.red_button.pack(side=tk.LEFT, padx=5)
-        
-        self.green_button = ttk.Checkbutton(rgb_frame, text="Green", variable=self.show_green, 
-                                           command=self.update_image)
-        self.green_button.pack(side=tk.LEFT, padx=5)
-        
-        self.blue_button = ttk.Checkbutton(rgb_frame, text="Blue", variable=self.show_blue, 
-                                          command=self.update_image)
-        self.blue_button.pack(side=tk.LEFT, padx=5)
-        
-        # Image display area, which will show the BMP image after it is opened and processed.
-        image_frame = ttk.LabelFrame(main_frame, text="Image Display")
-        image_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # Create scrollable canvas for image display, which will allow the user to scroll through large images.
-        canvas_frame = ttk.Frame(image_frame)
-        canvas_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # Create canvas with scrollbars, which will allow the user to scroll through the image if it is larger than the display area.
-        # The canvas will hold the image and allow for zooming and panning.
-        self.canvas = tk.Canvas(canvas_frame, bg='white')
-        v_scroll = ttk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=self.canvas.yview)
-        h_scroll = ttk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL, command=self.canvas.xview)
-        
-        self.canvas.configure(yscrollcommand=v_scroll.set, xscrollcommand=h_scroll.set)
-        
-        self.canvas.grid(row=0, column=0, sticky="nsew")
-        v_scroll.grid(row=0, column=1, sticky="ns")
-        h_scroll.grid(row=1, column=0, sticky="ew")
-        
-        canvas_frame.grid_rowconfigure(0, weight=1)
-        canvas_frame.grid_columnconfigure(0, weight=1)
-    
+        # Color palette
+        self.BG     = '#F6F7F9'
+        self.CARD   = '#FFFFFF'
+        self.TEXT   = '#1F2937'
+        self.MUTED  = '#6B7280'
+        self.BORDER = '#D1D5DB'
+        self.ACCENT = '#2563EB'
+
+        self.root.configure(bg=self.BG)
+
+        self.parser         = BMPParser()
+        self.original_image = None
+        self.current_image  = None
+        self.photo_image    = None
+
+        # Channel states
+        self.show_red   = tk.BooleanVar(value=True)
+        self.show_green = tk.BooleanVar(value=True)
+        self.show_blue  = tk.BooleanVar(value=True)
+
+        # Metadata display variables
+        self.meta_vars = {
+            'File Size': tk.StringVar(value='—'),
+            'Width':     tk.StringVar(value='—'),
+            'Height':    tk.StringVar(value='—'),
+            'Bit Depth': tk.StringVar(value='—'),
+        }
+
+        self._configure_styles()
+        self.setup_gui()
+
+    # ── Styles ──────────────────────────────────────────────────────────────
+    def _configure_styles(self):
+        FONT      = ('Segoe UI', 10)
+        FONT_BOLD = ('Segoe UI', 10, 'bold')
+        FONT_SM   = ('Segoe UI', 9)
+        FONT_XL   = ('Segoe UI', 17, 'bold')
+
+        s = ttk.Style()
+        s.theme_use('clam')
+
+        BG, CARD, TEXT        = self.BG, self.CARD, self.TEXT
+        MUTED, BORDER, ACCENT = self.MUTED, self.BORDER, self.ACCENT
+
+        s.configure('App.TFrame',  background=BG)
+        s.configure('Card.TFrame', background=CARD)
+
+        s.configure('TLabel',             background=BG,   foreground=TEXT,  font=FONT)
+        s.configure('Card.TLabel',        background=CARD,  foreground=TEXT,  font=FONT)
+        s.configure('CardBold.TLabel',    background=CARD,  foreground=TEXT,  font=FONT_BOLD)
+        s.configure('Muted.TLabel',       background=CARD,  foreground=MUTED, font=FONT_SM)
+        s.configure('Title.TLabel',       background=BG,    foreground=TEXT,  font=FONT_XL)
+        s.configure('Subtitle.TLabel',    background=BG,    foreground=MUTED, font=FONT_SM)
+        s.configure('SectionHead.TLabel', background=CARD,  foreground=TEXT,  font=FONT_BOLD)
+
+        s.configure('TButton',
+                    font=FONT, padding=(10, 5),
+                    background='#E5E7EB', foreground=TEXT,
+                    relief='flat', borderwidth=0)
+        s.map('TButton',
+              background=[('active', '#D1D5DB'), ('pressed', '#9CA3AF')],
+              relief=[('pressed', 'flat'), ('!pressed', 'flat')])
+
+        s.configure('Accent.TButton',
+                    font=FONT_BOLD, padding=(12, 6),
+                    background=ACCENT, foreground='white',
+                    relief='flat', borderwidth=0)
+        s.map('Accent.TButton',
+              background=[('active', '#1D4ED8'), ('pressed', '#1E40AF')],
+              foreground=[('active', 'white'), ('pressed', 'white')])
+
+        s.configure('TScale',
+                    background=CARD, troughcolor='#E5E7EB',
+                    sliderlength=18, sliderrelief='flat')
+        s.map('TScale', background=[('active', CARD)])
+
+        s.configure('TCheckbutton', background=CARD, foreground=TEXT, font=FONT)
+        s.map('TCheckbutton',
+              background=[('active', CARD)],
+              indicatorcolor=[('selected', ACCENT), ('!selected', '#E5E7EB')])
+
+        s.configure('TScrollbar',
+                    background='#E5E7EB', troughcolor=CARD,
+                    relief='flat', borderwidth=0, arrowsize=13)
+        s.map('TScrollbar', background=[('active', '#9CA3AF')])
+
+    def _card(self, parent, **kwargs):
+        """White card frame with a 1 px border."""
+        return tk.Frame(parent, bg=self.CARD,
+                        highlightbackground=self.BORDER, highlightthickness=1,
+                        **kwargs)
+
+    # ── Layout ──────────────────────────────────────────────────────────────
+    def setup_gui(self):
+        PAD = 16
+        GAP = 12
+
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(0, weight=1)
+
+        # Outer wrapper
+        wrap = tk.Frame(self.root, bg=self.BG)
+        wrap.grid(row=0, column=0, sticky='nsew', padx=PAD, pady=PAD)
+        wrap.grid_rowconfigure(2, weight=1)
+        wrap.grid_columnconfigure(0, weight=0, minsize=268)
+        wrap.grid_columnconfigure(1, weight=1)
+
+        # ── Header ──────────────────────────────────────────────────────────
+        hdr = tk.Frame(wrap, bg=self.BG)
+        hdr.grid(row=0, column=0, columnspan=2, sticky='ew', pady=(0, GAP))
+        ttk.Label(hdr, text="BMP Image Compressor",
+                  style='Title.TLabel').pack(side='left')
+        ttk.Label(hdr,
+                  text="  Open, preview, compress, and inspect BMP images.",
+                  style='Subtitle.TLabel').pack(side='left', pady=(8, 0))
+
+        # ── Toolbar ─────────────────────────────────────────────────────────
+        tb = self._card(wrap)
+        tb.grid(row=1, column=0, columnspan=2, sticky='ew', pady=(0, GAP))
+        tb_row = tk.Frame(tb, bg=self.CARD)
+        tb_row.pack(fill='x', padx=14, pady=10)
+
+        _btn_open = ttk.Button(tb_row, text="Open BMP",
+                               command=self.open_file,
+                               style='Accent.TButton')
+        _btn_open.pack(side='left', padx=(0, 8))
+
+        _btn_compress = ttk.Button(tb_row, text="Compress",
+                                   command=self.compress_image,
+                                   style='TButton')
+        _btn_compress.pack(side='left', padx=(0, 8))
+
+        _btn_open_c = ttk.Button(tb_row, text="Open Compressed",
+                                 command=self.open_custom_compressed_file,
+                                 style='TButton')
+        _btn_open_c.pack(side='left')
+
+        # Keep refs so we can disable/enable them during long operations
+        self._action_buttons = [_btn_open, _btn_compress, _btn_open_c]
+
+        # Inline loading indicator — hidden by default, shown via _start_loading()
+        self._loading_frame = tk.Frame(tb_row, bg=self.CARD)
+        self._spin_canvas   = tk.Canvas(self._loading_frame, width=18, height=18,
+                                        bg=self.CARD, highlightthickness=0)
+        self._spin_canvas.pack(side='left', padx=(0, 6))
+        self._loading_label = tk.Label(self._loading_frame, text='',
+                                       bg=self.CARD, fg=self.MUTED,
+                                       font=('Segoe UI', 9))
+        self._loading_label.pack(side='left')
+        # _loading_frame is intentionally NOT packed yet
+
+        # ── Left panel ──────────────────────────────────────────────────────
+        left = tk.Frame(wrap, bg=self.BG)
+        left.grid(row=2, column=0, sticky='nsew', padx=(0, GAP))
+        left.grid_columnconfigure(0, weight=1)
+
+        # — Metadata card —
+        meta_card = self._card(left)
+        meta_card.grid(row=0, column=0, sticky='ew', pady=(0, GAP))
+
+        mi = tk.Frame(meta_card, bg=self.CARD)
+        mi.pack(fill='x', padx=14, pady=12)
+        mi.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(mi, text="Image Info",
+                  style='SectionHead.TLabel').grid(
+            row=0, column=0, columnspan=2, sticky='w', pady=(0, 8))
+
+        for idx, (lbl, key) in enumerate([
+            ("File Size",  'File Size'),
+            ("Width",      'Width'),
+            ("Height",     'Height'),
+            ("Bit Depth",  'Bit Depth'),
+        ], start=1):
+            ttk.Label(mi, text=lbl,
+                      style='CardBold.TLabel').grid(
+                row=idx, column=0, sticky='w', pady=3)
+            ttk.Label(mi, textvariable=self.meta_vars[key],
+                      style='Muted.TLabel').grid(
+                row=idx, column=1, sticky='e', pady=3, padx=(16, 0))
+
+        # Compression result line (shown after compress action)
+        self.comp_result_label = ttk.Label(
+            meta_card, text='', style='Muted.TLabel',
+            wraplength=230, justify='left')
+        self.comp_result_label.pack(anchor='w', padx=14, pady=(0, 10))
+
+        # — Controls card —
+        ctrl_card = self._card(left)
+        ctrl_card.grid(row=1, column=0, sticky='ew')
+
+        ci = tk.Frame(ctrl_card, bg=self.CARD)
+        ci.pack(fill='x', padx=14, pady=12)
+        ci.grid_columnconfigure(1, weight=1)
+
+        ttk.Label(ci, text="Image Controls",
+                  style='SectionHead.TLabel').grid(
+            row=0, column=0, columnspan=3, sticky='w', pady=(0, 10))
+
+        # Brightness
+        ttk.Label(ci, text="Brightness",
+                  style='CardBold.TLabel').grid(row=1, column=0, sticky='w')
+        self.brightness_var   = tk.DoubleVar(value=100)
+        self.brightness_label = ttk.Label(ci, text="100%",
+                                          style='Muted.TLabel', width=5)
+        self.brightness_label.grid(row=1, column=2, sticky='e', padx=(6, 0))
+        ttk.Scale(ci, from_=0, to=100,
+                  variable=self.brightness_var, orient='horizontal',
+                  command=self.update_image).grid(
+            row=2, column=0, columnspan=2, sticky='ew', pady=(2, 10))
+
+        # Scale
+        ttk.Label(ci, text="Scale",
+                  style='CardBold.TLabel').grid(row=3, column=0, sticky='w')
+        self.scale_var   = tk.DoubleVar(value=100)
+        self.scale_label = ttk.Label(ci, text="100%",
+                                     style='Muted.TLabel', width=5)
+        self.scale_label.grid(row=3, column=2, sticky='e', padx=(6, 0))
+        ttk.Scale(ci, from_=1, to=100,
+                  variable=self.scale_var, orient='horizontal',
+                  command=self.update_image).grid(
+            row=4, column=0, columnspan=2, sticky='ew', pady=(2, 10))
+
+        # RGB channels
+        ttk.Label(ci, text="Visible channels",
+                  style='CardBold.TLabel').grid(
+            row=5, column=0, columnspan=3, sticky='w', pady=(0, 6))
+
+        rgb_row = tk.Frame(ci, bg=self.CARD)
+        rgb_row.grid(row=6, column=0, columnspan=3, sticky='w')
+
+        self.red_button = ttk.Checkbutton(
+            rgb_row, text="Red",
+            variable=self.show_red, command=self.update_image)
+        self.red_button.pack(side='left', padx=(0, 10))
+
+        self.green_button = ttk.Checkbutton(
+            rgb_row, text="Green",
+            variable=self.show_green, command=self.update_image)
+        self.green_button.pack(side='left', padx=(0, 10))
+
+        self.blue_button = ttk.Checkbutton(
+            rgb_row, text="Blue",
+            variable=self.show_blue, command=self.update_image)
+        self.blue_button.pack(side='left')
+
+        # ── Preview card ────────────────────────────────────────────────────
+        prev_card = self._card(wrap)
+        prev_card.grid(row=2, column=1, sticky='nsew')
+
+        pi = tk.Frame(prev_card, bg=self.CARD)
+        pi.pack(fill='both', expand=True, padx=10, pady=10)
+        pi.grid_rowconfigure(0, weight=1)
+        pi.grid_columnconfigure(0, weight=1)
+
+        self.canvas = tk.Canvas(pi, bg=self.CARD,
+                                highlightthickness=0, cursor='crosshair')
+        v_scroll = ttk.Scrollbar(pi, orient='vertical',
+                                 command=self.canvas.yview)
+        h_scroll = ttk.Scrollbar(pi, orient='horizontal',
+                                 command=self.canvas.xview)
+        self.canvas.configure(yscrollcommand=v_scroll.set,
+                              xscrollcommand=h_scroll.set)
+        self.canvas.grid(row=0, column=0, sticky='nsew')
+        v_scroll.grid(row=0, column=1, sticky='ns')
+        h_scroll.grid(row=1, column=0, sticky='ew')
+
+        # Placeholder text (removed automatically once an image is displayed)
+        self.canvas.create_text(
+            400, 280,
+            text="Open a BMP image to preview it here.",
+            fill=self.MUTED, font=('Segoe UI', 11),
+            anchor='center', tags='placeholder')
+        self.canvas.bind('<Configure>', self._on_canvas_resize)
+
+    def _on_canvas_resize(self, event):
+        """Keep the placeholder centred when the canvas is resized."""
+        items = self.canvas.find_withtag('placeholder')
+        if items:
+            self.canvas.coords(items[0], event.width / 2, event.height / 2)
+
+    # ── Inline loading indicator ─────────────────────────────────────────────
+    def _start_loading(self, message):
+        """Disable action buttons and show spinner + message in the toolbar."""
+        for btn in self._action_buttons:
+            btn.config(state='disabled')
+        self._loading_label.config(text=message)
+        self._loading_frame.pack(side='left', padx=(20, 0))
+        self._spin_state = {'angle': 0, 'job': None, 'alive': True}
+        self._spin_tick()
+
+    def _spin_tick(self):
+        if not self._spin_state.get('alive'):
+            return
+        self._spin_canvas.delete('arc')
+        self._spin_canvas.create_arc(
+            1, 1, 17, 17,
+            start=self._spin_state['angle'], extent=270,
+            outline=self.ACCENT, width=3,
+            style='arc', tags='arc')
+        self._spin_state['angle'] = (self._spin_state['angle'] + 15) % 360
+        self._spin_state['job']   = self._spin_canvas.after(40, self._spin_tick)
+
+    def _stop_loading(self):
+        """Stop spinner, hide it, and re-enable action buttons."""
+        if hasattr(self, '_spin_state'):
+            self._spin_state['alive'] = False
+            if self._spin_state.get('job'):
+                try:
+                    self._spin_canvas.after_cancel(self._spin_state['job'])
+                except Exception:
+                    pass
+        self._loading_frame.pack_forget()
+        for btn in self._action_buttons:
+            btn.config(state='normal')
+
     def open_file(self):
-        # Open file dialog to select a BMP file and parse it
-        # This method will open a file dialog to select a BMP file, validate the file format, and parse the BMP file using the BMPParser.
         file_path = filedialog.askopenfilename(
             title="Select BMP File",
             filetypes=[("BMP files", "*.bmp"), ("All files", "*.*")]
         )
-        
+
         if file_path:
-            # Check if file extension is BMP (basic check)
             if not file_path.lower().endswith('.bmp'):
                 messagebox.showerror("Error", "Please select a BMP file")
                 return
-            
-            # Additional validation by reading first few bytes
+
             try:
                 with open(file_path, "rb") as f:
                     header = f.read(2)
@@ -921,218 +1117,167 @@ class BMPViewer:
             except Exception as e:
                 messagebox.showerror("Error", f"Cannot read file: {str(e)}")
                 return
-            
-            # Parse the BMP file
+
             if self.parser.parse_bmp(file_path):
                 self.original_image = self.parser.pixel_data.copy()
                 self.display_metadata()
                 self.update_image()
-    
+
     def display_metadata(self):
-        # Display metadata in the text widget
-        # This method will extract metadata from the BMPParser and display it in the metadata text widget.
-        metadata = f"""File Size: {self.parser.file_size} bytes
-Image Width: {self.parser.width} pixels
-Image Height: {self.parser.height} pixels
-Bits Per Pixel: {self.parser.bits_per_pixel} bits"""
-        
-        self.metadata_text.config(state=tk.NORMAL)
-        self.metadata_text.delete(1.0, tk.END)
-        self.metadata_text.insert(1.0, metadata)
-        self.metadata_text.config(state=tk.DISABLED)
-    
+        self.meta_vars['File Size'].set(f"{self.parser.file_size:,} bytes")
+        self.meta_vars['Width'].set(f"{self.parser.width} px")
+        self.meta_vars['Height'].set(f"{self.parser.height} px")
+        self.meta_vars['Bit Depth'].set(f"{self.parser.bits_per_pixel} bpp")
+        self.comp_result_label.config(text='')
+
     def numpy_to_photoimage(self, image_array):
-        # Convert a numpy array to a PhotoImage object without using PIL
         height, width, channels = image_array.shape
-        
-        # Create PPM format string (portable pixmap)
         ppm_header = f'P6\n{width} {height}\n255\n'
-        
-        # Convert to bytes
         ppm_data = ppm_header.encode('ascii') + image_array.tobytes()
-        
-        # Create PhotoImage from PPM data
         photo = tk.PhotoImage(data=ppm_data, format='PPM')
         return photo
-    
+
     def update_image(self, event=None):
-        # Update the image based on current settings (brightness, scale, channel visibility)
         if self.original_image is None:
             return
-        
-        # Update slider labels
+
         self.brightness_label.config(text=f"{int(self.brightness_var.get())}%")
         self.scale_label.config(text=f"{int(self.scale_var.get())}%")
-        
-        # Start with original image
+
         image = self.original_image.copy().astype(np.float32)
-        
-        # Apply channel filtering based on user selection
+
         if not self.show_red.get():
             image[:, :, 0] = 0
         if not self.show_green.get():
             image[:, :, 1] = 0
         if not self.show_blue.get():
             image[:, :, 2] = 0
-        
-        # Apply brightness adjustment using numpy matrix operations
+
         brightness_factor = self.brightness_var.get() / 100.0
         image = np.multiply(image, brightness_factor)
-        
-        # Clip values to valid range
         image = np.clip(image, 0, 255).astype(np.uint8)
-        
-        # Apply scaling
+
         scale_factor = self.scale_var.get() / 100.0
         if scale_factor != 1.0:
             image = self.scale_image(image, scale_factor)
-        
+
         self.current_image = image
         self.display_on_canvas()
-    
+
     def scale_image(self, image, scale_factor):
-        # Scale the image by a given factor using nearest-neighbor interpolation
-        # This method will resize the image based on the scale factor provided, using nearest-neighbor interpolation.
-        # If scale factor is 0, return a blank image
-        # If scale factor is 1, return the original image
-        # If scale factor is less than 1, downscale the image
         if scale_factor == 0:
             return np.zeros((1, 1, 3), dtype=np.uint8)
 
-        # Calculate new dimensions based on scale factor
         old_h, old_w = image.shape[:2]
         new_h = max(1, int(old_h * scale_factor))
         new_w = max(1, int(old_w * scale_factor))
 
-        # If the new size is same, skip
         if new_h == old_h and new_w == old_w:
             return image.copy()
 
-        # Calculate row/col ratios
         row_ratio = old_h / new_h
         col_ratio = old_w / new_w
 
-        # Create destination image
-        result = np.zeros((new_h, new_w, 3), dtype=np.uint8)
-
-        # Vectorized sampling by nearest-neighbor (can replace with average)
+        result  = np.zeros((new_h, new_w, 3), dtype=np.uint8)
         row_idx = (np.arange(new_h) * row_ratio).astype(int)
         col_idx = (np.arange(new_w) * col_ratio).astype(int)
-
-        # Use numpy broadcasting to avoid loops
         result[:, :] = image[row_idx[:, None], col_idx]
         return result
-    
+
     def display_on_canvas(self):
-        # Display the current image on the canvas, this method will convert the current image to a PhotoImage and display it on the canvas.
         if self.current_image is None:
             return
-        
+
         try:
-            # Convert numpy array to PhotoImage without any external libraries
             self.photo_image = self.numpy_to_photoimage(self.current_image)
-            
-            # Clear canvas and display image
             self.canvas.delete("all")
             self.canvas.create_image(0, 0, anchor=tk.NW, image=self.photo_image)
-            
-            # Update scroll region
             self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-            
         except Exception as e:
             messagebox.showerror("Error", f"Failed to display image: {str(e)}")
-    
+
     def compress_image(self):
         """Compress the current BMP image and save as .custom_compressed"""
         if self.original_image is None:
             messagebox.showerror("Error", "No image loaded to compress")
             return
-        
-        # Get save file path
+
         file_path = filedialog.asksaveasfilename(
             title="Save Compressed Image",
             defaultextension=".custom_compressed",
             filetypes=[("custom_compressed files", "*.custom_compressed"), ("All files", "*.*")]
         )
-        
+
         if not file_path:
             return
-        
-        try:
-            start_time = time.time()
-            
-            # Create compression engine
-            compressor = CompressionEngine(block_size=4096)
-            
-            # # Compress the image
-            # compressed_data, bit_length, huffman_tree = compressor.compress_data(self.original_image)
-            
-            # # Create .custom_compressed file format
-            # custom_compressed_data = {
-            #     'width': self.parser.width,
-            #     'height': self.parser.height,
-            #     'bits_per_pixel': self.parser.bits_per_pixel,
-            #     'original_shape': self.original_image.shape,
-            #     'compressed_data': compressed_data,
-            #     'bit_length': bit_length,
-            #     'huffman_tree': huffman_tree,
-            #     'color_table': self.parser.color_table
-            # }
-            # Compress the image
-            compression_result = compressor.compress_data(self.original_image)
 
-            # Create .custom_compressed file format
-            custom_compressed_data = {
-                'width': self.parser.width,
-                'height': self.parser.height,
-                'bits_per_pixel': self.parser.bits_per_pixel,
-                'original_shape': self.original_image.shape,
-                'compression_result': compression_result,  # Changed from individual fields
-                'color_table': self.parser.color_table,
-                'original_file_size': self.parser.file_size  # Store exact original file size
-            }
-            
-            # Save to file
-            with open(file_path, 'wb') as f:
-                pickle.dump(custom_compressed_data, f)
-            
-            end_time = time.time()
-            compression_time = int((end_time - start_time) * 1000)  # Convert to milliseconds
-            
-            # Calculate file sizes and compression ratio
-            original_size = self.parser.file_size
-            compressed_size = os.path.getsize(file_path)
-            compression_ratio = original_size / compressed_size if compressed_size > 0 else 0
-            space_savings = (1 - compressed_size / original_size) * 100 if original_size > 0 else 0
-            
-            # Display compression results
-            result_message = f"""Compression Complete!
+        self._start_loading("Compressing image…")
+        result = {}
 
-    Original BMP file size: {original_size} bytes
-    Compressed file size: {compressed_size} bytes
-    Compression ratio: {compression_ratio:.4f}
-    Space savings: {space_savings:.1f}%
-    Compression time: {compression_time} ms"""
-            
-            messagebox.showinfo("Compression Results", result_message)
-            
-            # Update metadata display to show compression results
-            current_metadata = self.metadata_text.get(1.0, tk.END)
-            new_metadata = current_metadata + f"""
-    --- Compression Results ---
-    Original Size: {original_size} bytes
-    Compressed Size: {compressed_size} bytes
-    Compression Ratio: {compression_ratio:.4f}
-    Space Savings: {space_savings:.1f}%
-    Compression Time: {compression_time} ms"""
-            
-            self.metadata_text.config(state=tk.NORMAL)
-            self.metadata_text.delete(1.0, tk.END)
-            self.metadata_text.insert(1.0, new_metadata)
-            self.metadata_text.config(state=tk.DISABLED)
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Compression failed: {str(e)}")
+        def _worker():
+            try:
+                start_time         = time.time()
+                compressor         = CompressionEngine(block_size=4096)
+                compression_result = compressor.compress_data(self.original_image)
+
+                custom_compressed_data = {
+                    'width':              self.parser.width,
+                    'height':             self.parser.height,
+                    'bits_per_pixel':     self.parser.bits_per_pixel,
+                    'original_shape':     self.original_image.shape,
+                    'compression_result': compression_result,
+                    'color_table':        self.parser.color_table,
+                    'original_file_size': self.parser.file_size,
+                }
+
+                with open(file_path, 'wb') as f:
+                    pickle.dump(custom_compressed_data, f)
+
+                compression_time  = int((time.time() - start_time) * 1000)
+                original_size     = self.parser.file_size
+                compressed_size   = os.path.getsize(file_path)
+                compression_ratio = original_size / compressed_size if compressed_size > 0 else 0
+                space_savings     = (1 - compressed_size / original_size) * 100 if original_size > 0 else 0
+
+                result.update(ok=True,
+                              compression_time=compression_time,
+                              original_size=original_size,
+                              compressed_size=compressed_size,
+                              compression_ratio=compression_ratio,
+                              space_savings=space_savings)
+            except Exception as e:
+                result.update(ok=False, error=str(e))
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
+        def _poll():
+            if t.is_alive():
+                self.root.after(50, _poll)
+                return
+            self._stop_loading()
+            if not result.get('ok'):
+                messagebox.showerror("Error", f"Compression failed: {result.get('error', 'Unknown error')}")
+                return
+            original_size     = result['original_size']
+            compressed_size   = result['compressed_size']
+            compression_ratio = result['compression_ratio']
+            space_savings     = result['space_savings']
+            compression_time  = result['compression_time']
+            messagebox.showinfo("Compression Results", (
+                f"Compression Complete!\n\n"
+                f"Original BMP file size:  {original_size} bytes\n"
+                f"Compressed file size:    {compressed_size} bytes\n"
+                f"Compression ratio:       {compression_ratio:.4f}\n"
+                f"Space savings:           {space_savings:.1f}%\n"
+                f"Compression time:        {compression_time} ms"
+            ))
+            self.comp_result_label.config(
+                text=(f"Compressed: {compressed_size:,} B  ·  "
+                      f"{space_savings:.1f}% saved  ·  {compression_time} ms")
+            )
+
+        self.root.after(50, _poll)
 
     def open_custom_compressed_file(self):
         """Open and decompress a .custom_compressed file"""
@@ -1140,85 +1285,79 @@ Bits Per Pixel: {self.parser.bits_per_pixel} bits"""
             title="Open custom_compressed File",
             filetypes=[("custom_compressed files", "*.custom_compressed"), ("All files", "*.*")]
         )
-        
+
         if not file_path:
             return
-        
-        try:
-            # Load the .custom_compressed file
-            with open(file_path, 'rb') as f:
-                custom_compressed_data = pickle.load(f)
-            
-            # # Extract data
-            # compressed_data = custom_compressed_data['compressed_data']
-            # bit_length = custom_compressed_data['bit_length']
-            # huffman_tree = custom_compressed_data['huffman_tree']
-            # original_shape = custom_compressed_data['original_shape']
-            
-            # # Decompress the image
-            # compressor = CompressionEngine()
-            # decompressed_image = compressor.decompress_data(
-            #     compressed_data, bit_length, huffman_tree, original_shape
-            # )
-            # Extract compression result
-            compression_result = custom_compressed_data['compression_result']
-            original_shape = custom_compressed_data['original_shape']
 
-            # Decompress the image
-            compressor = CompressionEngine(block_size=4096)
-            decompressed_image = compressor.decompress_data(
-                compression_result, original_shape
-            )
-            
-            # Update parser with ORIGINAL metadata (not compressed file metadata)
-            self.parser.width = custom_compressed_data['width']
-            self.parser.height = custom_compressed_data['height'] 
+        self._start_loading("Decompressing image…")
+        result = {}
+
+        def _worker():
+            try:
+                with open(file_path, 'rb') as f:
+                    custom_compressed_data = pickle.load(f)
+
+                compression_result = custom_compressed_data['compression_result']
+                original_shape     = custom_compressed_data['original_shape']
+                compressor         = CompressionEngine(block_size=4096)
+                decompressed_image = compressor.decompress_data(
+                    compression_result, original_shape
+                )
+                result.update(ok=True,
+                              data=custom_compressed_data,
+                              image=decompressed_image)
+            except Exception as e:
+                result.update(ok=False, error=str(e))
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
+        def _poll():
+            if t.is_alive():
+                self.root.after(50, _poll)
+                return
+            self._stop_loading()
+            if not result.get('ok'):
+                messagebox.showerror("Error", f"Failed to open .custom_compressed file: {result.get('error', 'Unknown error')}")
+                return
+
+            custom_compressed_data = result['data']
+            decompressed_image     = result['image']
+
+            self.parser.width          = custom_compressed_data['width']
+            self.parser.height         = custom_compressed_data['height']
             self.parser.bits_per_pixel = custom_compressed_data['bits_per_pixel']
-            self.parser.color_table = custom_compressed_data.get('color_table', [])
-            
-            # Use the original file size if available in the compressed data
-            # This ensures we show the actual original BMP file size, not an estimate
+            self.parser.color_table    = custom_compressed_data.get('color_table', [])
+
             if 'original_file_size' in custom_compressed_data:
                 self.parser.file_size = custom_compressed_data['original_file_size']
             else:
-                # Calculate what the original file size would be (estimate for BMP)
-                # For the original BMP file structure, not the decompressed RGB data
                 if self.parser.bits_per_pixel <= 8:
-                    # Indexed color: exact calculation based on BMP structure
-                    row_size = ((self.parser.bits_per_pixel * self.parser.width + 31) // 32) * 4
-                    pixel_data_size = row_size * self.parser.height
-                    color_table_size = (2 ** self.parser.bits_per_pixel) * 4
-                    # BMP header size varies, but 54 + color table is the typical structure
-                    # For 8-bit images, it's usually 54 bytes BITMAPFILEHEADER + BITMAPINFOHEADER + color table
+                    row_size                = ((self.parser.bits_per_pixel * self.parser.width + 31) // 32) * 4
+                    pixel_data_size         = row_size * self.parser.height
+                    color_table_size        = (2 ** self.parser.bits_per_pixel) * 4
                     estimated_original_size = 54 + color_table_size + pixel_data_size
                 else:
-                    # 24-bit RGB: pixel data size is width * height * 3
-                    row_size = ((24 * self.parser.width + 31) // 32) * 4  # Account for padding
-                    pixel_data_size = row_size * self.parser.height
+                    row_size                = ((24 * self.parser.width + 31) // 32) * 4
+                    pixel_data_size         = row_size * self.parser.height
                     estimated_original_size = 54 + pixel_data_size
-                
                 self.parser.file_size = estimated_original_size
-            
+
             self.parser.pixel_data = decompressed_image
-            
-            # Update display
-            self.original_image = decompressed_image.copy()
+            self.original_image    = decompressed_image.copy()
             self.display_metadata()
             self.update_image()
-            
-            # Show success message with original image info
-            success_message = f"""Successfully decompressed {os.path.basename(file_path)}
 
-    Reconstructed Image Properties:
-    Width: {self.parser.width} pixels  
-    Height: {self.parser.height} pixels
-    Bits Per Pixel: {self.parser.bits_per_pixel} bits
-    Original Size: {self.parser.file_size} bytes"""
-            
-            messagebox.showinfo("Decompression Successful", success_message)
-            
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to open .custom_compressed file: {str(e)}")
+            messagebox.showinfo("Decompression Successful", (
+                f"Successfully decompressed {os.path.basename(file_path)}\n\n"
+                f"Reconstructed Image Properties:\n"
+                f"Width:           {self.parser.width} pixels\n"
+                f"Height:          {self.parser.height} pixels\n"
+                f"Bits Per Pixel:  {self.parser.bits_per_pixel} bits\n"
+                f"Original Size:   {self.parser.file_size} bytes"
+            ))
+
+        self.root.after(50, _poll)
 
 
 def main():
